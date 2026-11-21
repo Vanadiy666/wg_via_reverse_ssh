@@ -1,0 +1,33 @@
+name: wg-reverse-server
+services:
+  transport:
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      - ./secrets:/run/keys:ro
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        if [ "$$CLIENT_SSH_HOST" = CHANGE_ME ]; then
+          echo 'Set CLIENT_SSH_HOST in server/.env' >&2
+          exit 1
+        fi
+        install -m 600 /run/keys/id_ed25519 /tmp/id_ed25519
+        trap 'kill $${bridge_pid:-} $${ssh_pid:-} 2>/dev/null || true; wait || true' EXIT
+        trap 'exit 0' TERM INT
+        wg-bridge --server --foreground --wg-host "$$WG_TARGET_HOST" --wg-port "$$WG_TARGET_PORT" --tcp-port "$$BRIDGE_TCP_PORT" --log-file /tmp/wg-bridge.log & bridge_pid=$$!
+        ssh -NT -i /tmp/id_ed25519 \
+          -o BatchMode=yes -o IdentitiesOnly=yes \
+          -o StrictHostKeyChecking=yes \
+          -o UserKnownHostsFile=/run/keys/known_hosts \
+          -o HostKeyAlias=reverse-wg-a \
+          -o ExitOnForwardFailure=yes -o ConnectTimeout=10 \
+          -o ServerAliveInterval=15 -o ServerAliveCountMax=3 \
+          -R "127.0.0.1:$${BRIDGE_TCP_PORT}:127.0.0.1:$${BRIDGE_TCP_PORT}" \
+          -p "$$CLIENT_SSH_PORT" "tunnel@$$CLIENT_SSH_HOST" & ssh_pid=$$!
+        wait -n || true
+        exit 1

@@ -1,0 +1,47 @@
+name: wg-reverse-client
+services:
+  transport:
+    image: wg-reverse-client:local
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    ports:
+      - "${CLIENT_SSH_BIND}:${CLIENT_SSH_PORT}:22/tcp"
+      - "${LOCAL_WG_BIND}:${LOCAL_WG_PORT}:${BRIDGE_UDP_PORT}/udp"
+    volumes:
+      - ./secrets:/run/keys:ro
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        install -m 600 /run/keys/ssh_host_ed25519_key /etc/ssh/ssh_host_ed25519_key
+        install -m 644 /run/keys/authorized_keys /etc/ssh/authorized_keys/tunnel
+        cat > /etc/ssh/sshd_config <<EOF
+        Port 22
+        HostKey /etc/ssh/ssh_host_ed25519_key
+        AuthorizedKeysFile /etc/ssh/authorized_keys/%u
+        AllowUsers tunnel
+        PermitRootLogin no
+        PubkeyAuthentication yes
+        PasswordAuthentication no
+        KbdInteractiveAuthentication no
+        UsePAM no
+        AllowTcpForwarding remote
+        PermitListen 127.0.0.1:$${BRIDGE_TCP_PORT}
+        AllowStreamLocalForwarding no
+        GatewayPorts no
+        AllowAgentForwarding no
+        X11Forwarding no
+        PermitTTY no
+        PermitTunnel no
+        MaxSessions 0
+        ClientAliveInterval 15
+        ClientAliveCountMax 3
+        EOF
+        /usr/sbin/sshd -t
+        trap 'kill $${sshd_pid:-} $${bridge_pid:-} 2>/dev/null || true; wait || true' EXIT
+        trap 'exit 0' TERM INT
+        /usr/sbin/sshd -D -e & sshd_pid=$$!
+        wg-bridge --client --foreground --tcp-port "$$BRIDGE_TCP_PORT" --wg-port "$$BRIDGE_UDP_PORT" --log-file /tmp/wg-bridge.log & bridge_pid=$$!
+        wait -n || true
+        exit 1
