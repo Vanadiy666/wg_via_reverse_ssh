@@ -6,6 +6,9 @@ services:
     restart: unless-stopped
     init: true
     env_file: .env
+    # Discard wg-bridge PID state on every container restart.
+    tmpfs:
+      - /tmp:mode=1777
     ports:
       - "${CLIENT_SSH_BIND}:${CLIENT_SSH_PORT}:22/tcp"
       - "${LOCAL_WG_BIND}:${LOCAL_WG_PORT}:${BRIDGE_UDP_PORT}/udp"

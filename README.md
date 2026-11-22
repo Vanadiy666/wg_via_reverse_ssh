@@ -54,7 +54,10 @@ awk '{print "reverse-wg-a " $1 " " $2}' client/secrets/ssh_host_ed25519_key.pub 
 docker compose up -d --build --remove-orphans
 ```
 
-## 4. WireGuard-клиент
+Временное состояние wg-bridge хранится в `tmpfs` и очищается при перезапуске,
+чтобы старый PID не блокировал восстановление туннеля.
+
+## 4. Пример использования WireGuard на Client
 
 В конфиге WireGuard на хосте Client укажите:
 
